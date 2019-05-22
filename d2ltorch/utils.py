@@ -152,19 +152,17 @@ def download_voc_pascal(data_dir='../data'):
     return voc_dir
 
 
-# def evaluate_accuracy(data_iter, net, ctx=[mx.cpu()]):
-#     """Evaluate accuracy of a model on the given data set."""
-#     if isinstance(ctx, mx.Context):
-#         ctx = [ctx]
-#     acc_sum, n = nd.array([0]), 0
-#     for batch in data_iter:
-#         features, labels, _ = _get_batch(batch, ctx)
-#         for X, y in zip(features, labels):
-#             y = y.astype('float32')
-#             acc_sum += (net(X).argmax(axis=1) == y).sum().copyto(mx.cpu())
-#             n += y.size
-#         acc_sum.wait_to_read()
-#     return acc_sum.asscalar() / n
+def evaluate_accuracy(data_iter, net, device):
+    """Evaluate accuracy of a model on the given data set."""
+    acc_sum, n = 0, 0
+    with torch.no_grad():
+        for X, y in data_iter:
+            # 如果device代表GPU，将数据复制到显存上
+            if device == 'gpu':
+                X, y = X.cuda(), y.cuda()
+            acc_sum += float((torch.argmax(net(X), dim=1) == y).sum())
+            n += y.size()[0]
+    return acc_sum / n
 
 
 # def _get_batch(batch, ctx):
@@ -221,7 +219,7 @@ def get_fashion_mnist_labels(labels):
 #     return nd.dot(X, w) + b
 
 
-def load_data_fashion_mnist(root, batch_size, resize=None):
+def load_data_fashion_mnist(root, batch_size, resize=None, download=True):
     """Download the fashion mnist dataset and then load into memory."""
 #     root = os.path.expanduser(root)
     transformer = []
@@ -230,8 +228,8 @@ def load_data_fashion_mnist(root, batch_size, resize=None):
     transformer += [transforms.ToTensor()]
     transformer = transforms.Compose(transformer)
 
-    mnist_train = datasets.FashionMNIST(root=root, train=True, transform=transformer)
-    mnist_test = datasets.FashionMNIST(root=root, train=False, transform=transformer)
+    mnist_train = datasets.FashionMNIST(root=root, train=True, transform=transformer, download=download)
+    mnist_test = datasets.FashionMNIST(root=root, train=False, transform=transformer, download=download)
     num_workers = 0 if sys.platform.startswith('win32') else 4
 
     train_iter = DataLoader(mnist_train, batch_size, shuffle=True, num_workers=num_workers)
@@ -675,29 +673,32 @@ def show_fashion_mnist(images, labels):
 #               % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc))
 
 
-# def train_ch5(net, train_iter, test_iter, batch_size, trainer, ctx,
-#               num_epochs):
-#     """Train and evaluate a model with CPU or GPU."""
-#     print('training on', ctx)
-#     loss = gloss.SoftmaxCrossEntropyLoss()
-#     for epoch in range(num_epochs):
-#         train_l_sum, train_acc_sum, n, start = 0.0, 0.0, 0, time.time()
-#         for X, y in train_iter:
-#             X, y = X.as_in_context(ctx), y.as_in_context(ctx)
-#             with autograd.record():
-#                 y_hat = net(X)
-#                 l = loss(y_hat, y).sum()
-#             l.backward()
-#             trainer.step(batch_size)
-#             y = y.astype('float32')
-#             train_l_sum += l.asscalar()
-#             train_acc_sum += (y_hat.argmax(axis=1) == y).sum().asscalar()
-#             n += y.size
-#         test_acc = evaluate_accuracy(test_iter, net, ctx)
-#         print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
-#               'time %.1f sec'
-#               % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc,
-#                  time.time() - start))
+def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs):
+    """Train and evaluate a model with CPU or GPU."""
+    print('training on', device)
+    loss = nn.CrossEntropyLoss()
+    for epoch in range(num_epochs):
+        train_l_sum, train_acc_sum, n, start = 0.0, 0.0, 0, time.time()
+        for X, y in train_iter:
+            net.zero_grad()
+            
+            if device == 'gpu':
+                X, y = X.cuda(), y.cuda()
+                
+            y_hat = net(X)
+            l = loss(y_hat, y).sum()
+            l.backward()
+            optimizer.step()
+            
+            train_l_sum += float(l)
+            train_acc_sum += float((torch.argmax(y_hat.data, dim=1) == y.data).sum())
+            n += y.size()[0]
+    
+        test_acc = evaluate_accuracy(test_iter, net, device)
+        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
+              'time %.1f sec'
+              % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc,
+                 time.time() - start))
 
 
 # def train_ch7(trainer_fn, states, hyperparams, features, labels, batch_size=10,
@@ -777,14 +778,13 @@ def show_fashion_mnist(images, labels):
 #     return ctxes
 
 
-# def try_gpu():
-#     """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
-#     try:
-#         ctx = mx.gpu()
-#         _ = nd.array([0], ctx=ctx)
-#     except mx.base.MXNetError:
-#         ctx = mx.cpu()
-#     return ctx
+def try_gpu():
+    """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
+    if torch.cuda.is_available():
+        device = 'gpu'
+    else:
+        device = 'cpu'
+    return device
 
 
 def use_svg_display():
