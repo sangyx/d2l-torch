@@ -213,18 +213,17 @@ def get_fashion_mnist_labels(labels):
 #             for param in params:
 #                 param.grad[:] *= theta / norm
 
-
 # def linreg(X, w, b):
 #     """Linear regression."""
 #     return nd.dot(X, w) + b
 
 
-def load_data_fashion_mnist(root, batch_size, resize=None, download=True):
+def load_data_fashion_mnist(root, batch_size, resize=None, download=False):
     """Download the fashion mnist dataset and then load into memory."""
 #     root = os.path.expanduser(root)
     transformer = []
     if resize:
-        transformer += [gdata.vision.transforms.Resize(resize)]
+        transformer += [transforms.Resize(resize)]
     transformer += [transforms.ToTensor()]
     transformer = transforms.Compose(transformer)
 
@@ -299,6 +298,32 @@ def load_data_fashion_mnist(root, batch_size, resize=None, download=True):
 #     if not os.path.exists(os.path.join(*path)):
 #         os.makedirs(os.path.join(*path))
 
+def params_init(model, init, **kwargs):
+    """Initialize the parameters."""
+    def initialize(m):
+        if isinstance(m, nn.Conv2d):
+            init(m.weight.data, **kwargs)
+            try:
+                init(m.bias.data)
+            except:
+                pass
+
+        elif isinstance(m, nn.Linear):
+            init(m.weight.data, **kwargs)
+            try:
+                init(m.bias.data)
+            except:
+                pass
+
+        elif isinstance(m, nn.BatchNorm2d):
+            m.weight.data.fill_(1.0)
+            m.bias.data.fill_(0)
+
+        elif isinstance(m, nn.BatchNorm1d):
+            m.weight.data.fill_(1.0)
+            m.bias.data.fill_(0)
+
+    model.apply(initialize)
 
 # def predict_rnn(prefix, num_chars, rnn, params, init_rnn_state,
 #                 num_hiddens, vocab_size, ctx, idx_to_char, char_to_idx):
@@ -377,27 +402,27 @@ def load_data_fashion_mnist(root, batch_size, resize=None, download=True):
 #     return features, labels
 
 
-# class Residual(nn.Block):
-#     """The residual block."""
-#     def __init__(self, num_channels, use_1x1conv=False, strides=1, **kwargs):
-#         super(Residual, self).__init__(**kwargs)
-#         self.conv1 = nn.Conv2D(num_channels, kernel_size=3, padding=1,
-#                                strides=strides)
-#         self.conv2 = nn.Conv2D(num_channels, kernel_size=3, padding=1)
-#         if use_1x1conv:
-#             self.conv3 = nn.Conv2D(num_channels, kernel_size=1,
-#                                    strides=strides)
-#         else:
-#             self.conv3 = None
-#         self.bn1 = nn.BatchNorm()
-#         self.bn2 = nn.BatchNorm()
-
-#     def forward(self, X):
-#         Y = nd.relu(self.bn1(self.conv1(X)))
-#         Y = self.bn2(self.conv2(Y))
-#         if self.conv3:
-#             X = self.conv3(X)
-#         return nd.relu(Y + X)
+class Residual(nn.Module):
+    """The residual block."""
+    def __init__(self, in_channels, out_channels, use_1x1conv=False, stride=1, **kwargs):
+        super(Residual, self).__init__(**kwargs)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, 
+                               stride=stride)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1)
+        if use_1x1conv:
+            self.conv3 = nn.Conv2d(in_channels, out_channels, kernel_size=1,
+                                  stride=stride)
+        else:
+            self.conv3 = None
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        
+    def forward(self, X):
+        Y = torch.relu(self.bn1(self.conv1(X)))
+        Y = self.bn2(self.conv2(Y))
+        if self.conv3:
+            X = self.conv3(X)
+        return torch.relu(Y + X)
 
 
 # def resnet18(num_classes):
@@ -677,16 +702,16 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
     loss = nn.CrossEntropyLoss()
+    
     for epoch in range(num_epochs):
         train_l_sum, train_acc_sum, n, start = 0.0, 0.0, 0, time.time()
         for X, y in train_iter:
-            net.zero_grad()
-            
             if device == 'gpu':
                 X, y = X.cuda(), y.cuda()
-                
+            
+            optimizer.zero_grad()
             y_hat = net(X)
-            l = loss(y_hat, y).sum()
+            l = loss(y_hat, y)
             l.backward()
             optimizer.step()
             
