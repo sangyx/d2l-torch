@@ -10,6 +10,9 @@
 *注：关于什么是互相关运算和卷积运算，可以参见：[卷积（convolution）与互相关(cross-correlation)的一点探讨](https://zhuanlan.zhihu.com/p/33194385)*
 
 
+请按照[toc.ipynb](toc.ipynb)中的目录顺序进行阅读学习。
+
+
 虽然 PyTorch 与 MXNet API 较为相似，但是在具体实现上仍然存在一些不同，所以对原书内容进行了部分删改。水平有限，如有纰漏，欢迎指正。
 
 
