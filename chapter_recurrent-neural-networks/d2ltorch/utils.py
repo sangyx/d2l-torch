@@ -156,14 +156,12 @@ def evaluate_accuracy(data_iter, net, device):
     """Evaluate accuracy of a model on the given data set."""
     acc_sum, n = 0, 0
     with torch.no_grad():
-        net.eval() # 将模型切换为预测模式，对Dropout和BatchNorm有影响
         for X, y in data_iter:
             # 如果device代表GPU，将数据复制到显存上
             if device == 'gpu':
                 X, y = X.cuda(), y.cuda()
             acc_sum += float((torch.argmax(net(X), dim=1) == y).sum())
             n += y.size()[0]
-        net.train() # 将模型切换回训练模式
     return acc_sum / n
 
 
