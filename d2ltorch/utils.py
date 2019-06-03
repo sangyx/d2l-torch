@@ -9,15 +9,12 @@ import zipfile
 
 from IPython import display
 from matplotlib import pyplot as plt
+
 import torch
 from torch import autograd, nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-# import mxnet as mx
-# from mxnet import autograd, gluon, image, init, nd
-# from mxnet.contrib import text
-# from mxnet.gluon import data as gdata, loss as gloss, nn, utils as gutils
 import numpy as np
 
 
@@ -86,39 +83,38 @@ def corr2d(X, K):
 #         yield features.take(j), labels.take(j)
 
 
-# def data_iter_consecutive(corpus_indices, batch_size, num_steps, ctx=None):
-#     """Sample mini-batches in a consecutive order from sequential data."""
-#     corpus_indices = nd.array(corpus_indices, ctx=ctx)
-#     data_len = len(corpus_indices)
-#     batch_len = data_len // batch_size
-#     indices = corpus_indices[0 : batch_size * batch_len].reshape((
-#         batch_size, batch_len))
-#     epoch_size = (batch_len - 1) // num_steps
-#     for i in range(epoch_size):
-#         i = i * num_steps
-#         X = indices[:, i : i + num_steps]
-#         Y = indices[:, i + 1 : i + num_steps + 1]
-#         yield X, Y
+def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=torch.device('cpu')):
+    corpus_indices = torch.Tensor(corpus_indices)
+    corpus_indices = corpus_indices.to(device)
+    data_len = len(corpus_indices)
+    batch_len = data_len // batch_size
+    indices = corpus_indices[0: batch_size * batch_len].reshape(batch_size, batch_len)
+    epoch_size = (batch_len - 1) // num_steps
+    for i in range(epoch_size):
+        i = i * num_steps
+        X = indices[:, i: i + num_steps]
+        Y = indices[:, i + 1: i + num_steps + 1]
+        yield X, Y
 
 
-# def data_iter_random(corpus_indices, batch_size, num_steps, ctx=None):
-#     """Sample mini-batches in a random order from sequential data."""
-#     num_examples = (len(corpus_indices) - 1) // num_steps
-#     epoch_size = num_examples // batch_size
-#     example_indices = list(range(num_examples))
-#     random.shuffle(example_indices)
-
-#     def _data(pos):
-#         return corpus_indices[pos : pos + num_steps]
-
-#     for i in range(epoch_size):
-#         i = i * batch_size
-#         batch_indices = example_indices[i : i + batch_size]
-#         X = nd.array(
-#             [_data(j * num_steps) for j in batch_indices], ctx=ctx)
-#         Y = nd.array(
-#             [_data(j * num_steps + 1) for j in batch_indices], ctx=ctx)
-#         yield X, Y
+def data_iter_random(corpus_indices, batch_size, num_steps, device=torch.device('cpu')):
+    # 减1是因为输出的索引是相应输入的索引加1
+    num_examples = (len(corpus_indices) - 1) // num_steps
+    epoch_size = num_examples // batch_size
+    example_indices = list(range(num_examples))
+    random.shuffle(example_indices)
+    
+    # 返回从pos开始的长为num_steps的序列
+    def _data(pos):
+        return corpus_indices[pos: pos + num_steps]
+    
+    for i in range(epoch_size):
+        # 每次读取batch_size个随机样本
+        i = i * batch_size
+        batch_indices = example_indices[i: i + batch_size]
+        X = torch.Tensor([_data(j * num_steps) for j in batch_indices]).to(device)
+        Y = torch.Tensor([_data(j * num_steps + 1) for j in batch_indices]).to(device)
+        yield X, Y
 
 
 def download_imdb(data_dir='../data'):
@@ -159,11 +155,10 @@ def evaluate_accuracy(data_iter, net, device):
         net.eval() # 将模型切换为预测模式，对Dropout和BatchNorm有影响
         for X, y in data_iter:
             # 如果device代表GPU，将数据复制到显存上
-            if device == 'gpu':
-                X, y = X.cuda(), y.cuda()
+            X, y = X.to(device), y.to(device)
             acc_sum += float((torch.argmax(net(X), dim=1) == y).sum())
             n += y.size()[0]
-        net.train() # 将模型切换回训练模式
+        net.train() # 将模型切换会训练模式
     return acc_sum / n
 
 
@@ -239,18 +234,18 @@ def load_data_fashion_mnist(root, batch_size, resize=None, download=False):
     return train_iter, test_iter
 
 
-# def load_data_jay_lyrics():
-#     """Load the Jay Chou lyric data set (available in the Chinese book)."""
-#     with zipfile.ZipFile('../data/jaychou_lyrics.txt.zip') as zin:
-#         with zin.open('jaychou_lyrics.txt') as f:
-#             corpus_chars = f.read().decode('utf-8')
-#     corpus_chars = corpus_chars.replace('\n', ' ').replace('\r', ' ')
-#     corpus_chars = corpus_chars[0:10000]
-#     idx_to_char = list(set(corpus_chars))
-#     char_to_idx = dict([(char, i) for i, char in enumerate(idx_to_char)])
-#     vocab_size = len(char_to_idx)
-#     corpus_indices = [char_to_idx[char] for char in corpus_chars]
-#     return corpus_indices, char_to_idx, idx_to_char, vocab_size
+def load_data_jay_lyrics():
+    """Load the Jay Chou lyric data set (available in the Chinese book)."""
+    with zipfile.ZipFile('../data/jaychou_lyrics.txt.zip') as zin:
+        with zin.open('jaychou_lyrics.txt') as f:
+            corpus_chars = f.read().decode('utf-8')
+    corpus_chars = corpus_chars.replace('\n', ' ').replace('\r', ' ')
+    corpus_chars = corpus_chars[0:10000]
+    idx_to_char = list(set(corpus_chars))
+    char_to_idx = dict([(char, i) for i, char in enumerate(idx_to_char)])
+    vocab_size = len(char_to_idx)
+    corpus_indices = [char_to_idx[char] for char in corpus_chars]
+    return corpus_indices, char_to_idx, idx_to_char, vocab_size
 
 
 # def load_data_pikachu(batch_size, edge_size=256):
@@ -487,10 +482,11 @@ class Residual(nn.Module):
 #     plt.rcParams['figure.figsize'] = figsize
 
 
-# def sgd(params, lr, batch_size):
-#     """Mini-batch stochastic gradient descent."""
-#     for param in params:
-#         param[:] = param - lr * param.grad / batch_size
+def sgd(params, lr, batch_size):
+    """Mini-batch stochastic gradient descent."""
+    for param in params:
+        param.data.sub_(lr * param.grad.data / batch_size)
+        param.grad.data.zero_()
 
 
 # def show_bboxes(axes, bboxes, labels=None, colors=None):
@@ -703,15 +699,16 @@ def show_fashion_mnist(images, labels):
 def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs):
     """Train and evaluate a model with CPU or GPU."""
     print('training on', device)
+    net.to(device)
     loss = nn.CrossEntropyLoss()
     
     for epoch in range(num_epochs):
         train_l_sum, train_acc_sum, n, start = 0.0, 0.0, 0, time.time()
         for X, y in train_iter:
-            if device == 'gpu':
-                X, y = X.cuda(), y.cuda()
+            net.zero_grad()
             
-            optimizer.zero_grad()
+            X, y = X.to(device), y.to(device)
+                
             y_hat = net(X)
             l = loss(y_hat, y)
             l.backward()
@@ -719,13 +716,11 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
             
             train_l_sum += float(l)
             train_acc_sum += float((torch.argmax(y_hat.data, dim=1) == y.data).sum())
-            n += y.size()[0]
+            n += y.size(0)
     
         test_acc = evaluate_accuracy(test_iter, net, device)
-        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
-              'time %.1f sec'
-              % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc,
-                 time.time() - start))
+        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, time %.1f sec'
+              % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc, time.time() - start))
 
 
 # def train_ch7(trainer_fn, states, hyperparams, features, labels, batch_size=10,
@@ -807,11 +802,7 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
 
 def try_gpu():
     """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
-    if torch.cuda.is_available():
-        device = 'gpu'
-    else:
-        device = 'cpu'
-    return device
+    return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 def use_svg_display():
