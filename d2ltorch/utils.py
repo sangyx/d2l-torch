@@ -11,7 +11,7 @@ from IPython import display
 from matplotlib import pyplot as plt
 
 import torch
-from torch import autograd, nn
+from torch import autograd, nn, optim
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -73,17 +73,17 @@ def corr2d(X, K):
 #     return token_counter
 
 
-# def data_iter(batch_size, features, labels):
-#     """Iterate through a data set."""
-#     num_examples = len(features)
-#     indices = list(range(num_examples))
-#     random.shuffle(indices)
-#     for i in range(0, num_examples, batch_size):
-#         j = nd.array(indices[i: min(i + batch_size, num_examples)])
-#         yield features.take(j), labels.take(j)
+def data_iter(batch_size, features, labels):
+    """Iterate through a data set."""
+    num_examples = len(features)
+    indices = list(range(num_examples))
+    random.shuffle(indices)
+    for i in range(0, num_examples, batc_size):
+        j = indices[i: min(i + batc_size, num_examples)]
+        yield features[j], labels[j]
 
 
-def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=torch.device('cpu')):
+def data_iter_consecutive(corpus_indices, batch_size, num_steps, device='cpu'):
     corpus_indices = torch.Tensor(corpus_indices)
     corpus_indices = corpus_indices.to(device)
     data_len = len(corpus_indices)
@@ -97,19 +97,16 @@ def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=torch.de
         yield X, Y
 
 
-def data_iter_random(corpus_indices, batch_size, num_steps, device=torch.device('cpu')):
-    # 减1是因为输出的索引是相应输入的索引加1
+def data_iter_random(corpus_indices, batch_size, num_steps, device='cpu'):
     num_examples = (len(corpus_indices) - 1) // num_steps
     epoch_size = num_examples // batch_size
     example_indices = list(range(num_examples))
     random.shuffle(example_indices)
     
-    # 返回从pos开始的长为num_steps的序列
     def _data(pos):
         return corpus_indices[pos: pos + num_steps]
     
     for i in range(epoch_size):
-        # 每次读取batch_size个随机样本
         i = i * batch_size
         batch_indices = example_indices[i: i + batch_size]
         X = torch.Tensor([_data(j * num_steps) for j in batch_indices]).to(device)
@@ -148,17 +145,18 @@ def download_voc_pascal(data_dir='../data'):
     return voc_dir
 
 
-def evaluate_accuracy(data_iter, net, device):
+def evaluate_accuracy(data_iter, net, device='cpu'):
     """Evaluate accuracy of a model on the given data set."""
     acc_sum, n = 0, 0
     with torch.no_grad():
-        net.eval() # 将模型切换为预测模式，对Dropout和BatchNorm有影响
+        if isinstance(net, nn.Module):
+            net.eval()
         for X, y in data_iter:
-            # 如果device代表GPU，将数据复制到显存上
             X, y = X.to(device), y.to(device)
             acc_sum += float((torch.argmax(net(X), dim=1) == y).sum())
-            n += y.size()[0]
-        net.train() # 将模型切换会训练模式
+            n += y.size(0)
+        if isinstance(net, nn.Module):
+            net.train()
     return acc_sum / n
 
 
@@ -199,20 +197,19 @@ def get_fashion_mnist_labels(labels):
 #     return text.vocab.Vocabulary(counter, min_freq=5)
 
 
-# def grad_clipping(params, theta, ctx):
-#     """Clip the gradient."""
-#     if theta is not None:
-#         norm = nd.array([0], ctx)
-#         for param in params:
-#             norm += (param.grad ** 2).sum()
-#         norm = norm.sqrt().asscalar()
-#         if norm > theta:
-#             for param in params:
-#                 param.grad[:] *= theta / norm
+def grad_clipping(params, theta, device):
+    """Clip the gradient."""
+    norm = torch.Tensor([0]).to(device)
+    for param in params:
+        norm += (param.grad.data ** 2).sum()
+    norm = norm.sqrt().item()
+    if norm > theta:
+        for param in params:
+            param.grad.data.mul_(theta / norm)
 
-# def linreg(X, w, b):
-#     """Linear regression."""
-#     return nd.dot(X, w) + b
+def linreg(X, w, b):
+    """Linear regression."""
+    return torch.mm(X, w) + b
 
 
 def load_data_fashion_mnist(root, batch_size, resize=None, download=False):
@@ -295,22 +292,22 @@ def load_data_jay_lyrics():
 #     if not os.path.exists(os.path.join(*path)):
 #         os.makedirs(os.path.join(*path))
 
+def one_hot(idx, size, device='cpu'):
+    """Returns a one-hot Tensor."""
+    batch_size = idx.size(0)
+    index = idx.reshape(-1, 1)
+    return torch.zeros(batch_size, size).to(device).scatter_(dim=1, index=index, value=1)
+
 def params_init(model, init, **kwargs):
     """Initialize the parameters."""
-    def initialize(m):
+    def initializer(m):
         if isinstance(m, nn.Conv2d):
             init(m.weight.data, **kwargs)
-            try:
-                init(m.bias.data)
-            except:
-                pass
+            m.bias.data.fill_(0)
 
         elif isinstance(m, nn.Linear):
             init(m.weight.data, **kwargs)
-            try:
-                init(m.bias.data)
-            except:
-                pass
+            m.bias.data.fill_(0)
 
         elif isinstance(m, nn.BatchNorm2d):
             m.weight.data.fill_(1.0)
@@ -320,36 +317,38 @@ def params_init(model, init, **kwargs):
             m.weight.data.fill_(1.0)
             m.bias.data.fill_(0)
 
-    model.apply(initialize)
+    model.apply(initializer)
 
-# def predict_rnn(prefix, num_chars, rnn, params, init_rnn_state,
-#                 num_hiddens, vocab_size, ctx, idx_to_char, char_to_idx):
-#     """Predict next chars with a RNN model"""
-#     state = init_rnn_state(1, num_hiddens, ctx)
-#     output = [char_to_idx[prefix[0]]]
-#     for t in range(num_chars + len(prefix) - 1):
-#         X = to_onehot(nd.array([output[-1]], ctx=ctx), vocab_size)
-#         (Y, state) = rnn(X, state, params)
-#         if t < len(prefix) - 1:
-#             output.append(char_to_idx[prefix[t + 1]])
-#         else:
-#             output.append(int(Y[0].argmax(axis=1).asscalar()))
-#     return ''.join([idx_to_char[i] for i in output])
+def predict_rnn(prefix, num_chars, rnn, params, init_rnn_state,
+               num_hiddens, vocab_size, device, idx_to_char, char_to_idx):
+    """Predict next chars with a RNN model"""
+    state = init_rnn_state(1, num_hiddens, device)
+    output = [char_to_idx[prefix[0]]]
+    with torch.no_grad():
+        for t in range(num_chars + len(prefix) - 1):
+            X = to_onehot(torch.Tensor([[output[-1]]]).to(device), vocab_size, device)
+            (Y, state) = rnn(X, state, params)
+            if t < len(prefix) - 1:
+                output.append(char_to_idx[prefix[t + 1]])
+            else:
+                output.append(int(Y[0].argmax(dim=1).item()))
+    return ''.join([idx_to_char[i] for i in output])
 
 
-# def predict_rnn_gluon(prefix, num_chars, model, vocab_size, ctx, idx_to_char,
-#                       char_to_idx):
-#     """Precit next chars with a Gluon RNN model"""
-#     state = model.begin_state(batch_size=1, ctx=ctx)
-#     output = [char_to_idx[prefix[0]]]
-#     for t in range(num_chars + len(prefix) - 1):
-#         X = nd.array([output[-1]], ctx=ctx).reshape((1, 1))
-#         (Y, state) = model(X, state)
-#         if t < len(prefix) - 1:
-#             output.append(char_to_idx[prefix[t + 1]])
-#         else:
-#             output.append(int(Y.argmax(axis=1).asscalar()))
-#     return ''.join([idx_to_char[i] for i in output])
+def predict_rnn_nn(prefix, num_chars, model, vocab_size, device, idx_to_char,
+                  char_to_idx):
+    """Precit next chars with a nn RNN model"""
+    state = None
+    output = [char_to_idx[prefix[0]]]
+    with torch.no_grad():
+        for t in range(num_chars + len(prefix) - 1):
+            X = torch.Tensor([output[-1]]).to(device).reshape(1, 1)
+            (Y, state) = model(X, state)
+            if t < len(prefix) - 1:
+                output.append(char_to_idx[prefix[t + 1]])
+            else:
+                output.append(int(Y.argmax(dim=1).item()))
+    return ''.join([idx_to_char[i] for i in output])
 
 
 # def predict_sentiment(net, vocab, sentence):
@@ -445,41 +444,41 @@ class Residual(nn.Module):
 #     return net
 
 
-# class RNNModel(nn.Block):
-#     """RNN model."""
-#     def __init__(self, rnn_layer, vocab_size, **kwargs):
-#         super(RNNModel, self).__init__(**kwargs)
-#         self.rnn = rnn_layer
-#         self.vocab_size = vocab_size
-#         self.dense = nn.Dense(vocab_size)
-
-#     def forward(self, inputs, state):
-#         X = nd.one_hot(inputs.T, self.vocab_size)
-#         Y, state = self.rnn(X, state)
-#         output = self.dense(Y.reshape((-1, Y.shape[-1])))
-#         return output, state
-
-#     def begin_state(self, *args, **kwargs):
-#         return self.rnn.begin_state(*args, **kwargs)
-
-
-# def semilogy(x_vals, y_vals, x_label, y_label, x2_vals=None, y2_vals=None,
-#              legend=None, figsize=(3.5, 2.5)):
-#     """Plot x and log(y)."""
-#     set_figsize(figsize)
-#     plt.xlabel(x_label)
-#     plt.ylabel(y_label)
-#     plt.semilogy(x_vals, y_vals)
-#     if x2_vals and y2_vals:
-#         plt.semilogy(x2_vals, y2_vals, linestyle=':')
-#         plt.legend(legend)
-#     plt.show()
+class RNNModel(nn.Module):
+    """RNN model."""
+    def __init__(self, rnn_layer, num_hiddens, vocab_size, **kwargs):
+        super(RNNModel, self).__init__(**kwargs)
+        self.rnn = rnn_layer
+        self.vocab_size = vocab_size
+        self.linear = nn.Linear(num_hiddens, vocab_size)
+    
+    def forward(self, inputs, state=None):
+        # 将输入转置成(num_steps, batch_size)后获取one-hot向量表示
+        X = torch.stack(to_onehot(inputs, self.vocab_size, inputs.device))
+        Y, state = self.rnn(X, state)
+        # 全连接层会首先将Y的形状变成(num_steps * batch_size, num_hiddens)，它的输出
+        # 形状为(num_steps * batch_size, vocab_size)
+        output = self.linear(Y.reshape(-1, Y.shape[-1]))
+        return output, state
 
 
-# def set_figsize(figsize=(3.5, 2.5)):
-#     """Set matplotlib figure size."""
-#     use_svg_display()
-#     plt.rcParams['figure.figsize'] = figsize
+def semilogy(x_vals, y_vals, x_label, y_label, x2_vals=None, y2_vals=None,
+             legend=None, figsize=(3.5, 2.5)):
+    """Plot x and log(y)."""
+    set_figsize(figsize)
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.semilogy(x_vals, y_vals)
+    if x2_vals and y2_vals:
+        plt.semilogy(x2_vals, y2_vals, linestyle=':')
+        plt.legend(legend)
+    plt.show()
+
+
+def set_figsize(figsize=(3.5, 2.5)):
+    """Set matplotlib figure size."""
+    use_svg_display()
+    plt.rcParams['figure.figsize'] = figsize
 
 
 def sgd(params, lr, batch_size):
@@ -506,7 +505,7 @@ def sgd(params, lr, batch_size):
 
 def show_fashion_mnist(images, labels):
     """Plot Fashion-MNIST images with labels."""
-#     use_svg_display()
+    use_svg_display()
     _, figs = plt.subplots(1, len(images), figsize=(12, 12))
     for f, img, lbl in zip(figs, images, labels):
         f.imshow(img.reshape(28, 28).numpy())
@@ -540,14 +539,14 @@ def show_fashion_mnist(images, labels):
 #     plt.ylabel('x2')
 
 
-# def squared_loss(y_hat, y):
-#     """Squared loss."""
-#     return (y_hat - y.reshape(y_hat.shape)) ** 2 / 2
+def squared_loss(y_hat, y):
+    """Squared loss."""
+    return (y_hat - y.reshape(y_hat.shape)) ** 2 / 2
 
 
-# def to_onehot(X, size):
-#     """Represent inputs with one-hot encoding."""
-#     return [nd.one_hot(x, size) for x in X.T]
+def to_onehot(X, size, device='cpu'):
+    """Represent inputs with one-hot encoding."""
+    return [one_hot(x, size, device) for x in X.long().t()]
 
 
 # def train(train_iter, test_iter, net, loss, trainer, ctx, num_epochs):
@@ -590,110 +589,115 @@ def show_fashion_mnist(images, labels):
 #     return res
 
 
-# def train_and_predict_rnn(rnn, get_params, init_rnn_state, num_hiddens,
-#                           vocab_size, ctx, corpus_indices, idx_to_char,
-#                           char_to_idx, is_random_iter, num_epochs, num_steps,
-#                           lr, clipping_theta, batch_size, pred_period,
-#                           pred_len, prefixes):
-#     """Train an RNN model and predict the next item in the sequence."""
-#     if is_random_iter:
-#         data_iter_fn = data_iter_random
-#     else:
-#         data_iter_fn = data_iter_consecutive
-#     params = get_params()
-#     loss = gloss.SoftmaxCrossEntropyLoss()
-
-#     for epoch in range(num_epochs):
-#         if not is_random_iter:
-#             state = init_rnn_state(batch_size, num_hiddens, ctx)
-#         l_sum, n, start = 0.0, 0, time.time()
-#         data_iter = data_iter_fn(corpus_indices, batch_size, num_steps, ctx)
-#         for X, Y in data_iter:
-#             if is_random_iter:
-#                 state = init_rnn_state(batch_size, num_hiddens, ctx)
-#             else:
-#                 for s in state:
-#                     s.detach()
-#             with autograd.record():
-#                 inputs = to_onehot(X, vocab_size)
-#                 (outputs, state) = rnn(inputs, state, params)
-#                 outputs = nd.concat(*outputs, dim=0)
-#                 y = Y.T.reshape((-1,))
-#                 l = loss(outputs, y).mean()
-#             l.backward()
-#             grad_clipping(params, clipping_theta, ctx)
-#             sgd(params, lr, 1)
-#             l_sum += l.asscalar() * y.size
-#             n += y.size
-
-#         if (epoch + 1) % pred_period == 0:
-#             print('epoch %d, perplexity %f, time %.2f sec' % (
-#                 epoch + 1, math.exp(l_sum / n), time.time() - start))
-#             for prefix in prefixes:
-#                 print(' -', predict_rnn(
-#                     prefix, pred_len, rnn, params, init_rnn_state,
-#                     num_hiddens, vocab_size, ctx, idx_to_char, char_to_idx))
-
-
-# def train_and_predict_rnn_gluon(model, num_hiddens, vocab_size, ctx,
-#                                 corpus_indices, idx_to_char, char_to_idx,
-#                                 num_epochs, num_steps, lr, clipping_theta,
-#                                 batch_size, pred_period, pred_len, prefixes):
-#     """Train an Gluon RNN model and predict the next item in the sequence."""
-#     loss = gloss.SoftmaxCrossEntropyLoss()
-#     model.initialize(ctx=ctx, force_reinit=True, init=init.Normal(0.01))
-#     trainer = gluon.Trainer(model.collect_params(), 'sgd',
-#                             {'learning_rate': lr, 'momentum': 0, 'wd': 0})
-
-#     for epoch in range(num_epochs):
-#         l_sum, n, start = 0.0, 0, time.time()
-#         data_iter = data_iter_consecutive(
-#             corpus_indices, batch_size, num_steps, ctx)
-#         state = model.begin_state(batch_size=batch_size, ctx=ctx)
-#         for X, Y in data_iter:
-#             for s in state:
-#                 s.detach()
-#             with autograd.record():
-#                 (output, state) = model(X, state)
-#                 y = Y.T.reshape((-1,))
-#                 l = loss(output, y).mean()
-#             l.backward()
-#             params = [p.data() for p in model.collect_params().values()]
-#             grad_clipping(params, clipping_theta, ctx)
-#             trainer.step(1)
-#             l_sum += l.asscalar() * y.size
-#             n += y.size
-
-#         if (epoch + 1) % pred_period == 0:
-#             print('epoch %d, perplexity %f, time %.2f sec' % (
-#                 epoch + 1, math.exp(l_sum / n), time.time() - start))
-#             for prefix in prefixes:
-#                 print(' -', predict_rnn_gluon(
-#                     prefix, pred_len, model, vocab_size, ctx, idx_to_char,
-#                     char_to_idx))
+def train_and_predict_rnn(rnn, get_params, init_rnn_state, num_hiddens,
+                          vocab_size, device, corpus_indices, idx_to_char,
+                          char_to_idx, is_random_iter, num_epochs, num_steps,
+                          lr, clipping_theta, batch_size, pred_period,
+                          pred_len, prefixes):
+    """Train an RNN model and predict the next item in the sequence."""
+    if is_random_iter:
+        data_iter_fn = data_iter_random
+    else:
+        data_iter_fn = data_iter_consecutive
+    params = get_params()
+    loss = nn.CrossEntropyLoss()
+    
+    for epoch in range(num_epochs):
+        if not is_random_iter:
+            state = init_rnn_state(batch_size, num_hiddens, device)
+        l_sum, n, start = 0.0, 0, time.time()
+        data_iter = data_iter_fn(corpus_indices, batch_size, num_steps, device)
+        for X, Y in data_iter:
+            if is_random_iter:
+                state = init_rnn_state(batch_size, num_hiddens, device)
+            else:
+                for s in state:
+                    s.detach_()
+ 
+            inputs = to_onehot(X, vocab_size, device)
+            (outputs, state) = rnn(inputs, state, params)
+            outputs = torch.cat(outputs, dim=0)
+            y = Y.t().flatten().long()
+            
+            l = loss(outputs, y).mean()
+            l.backward()
+            grad_clipping(params, clipping_theta, device)
+            sgd(params, lr, 1)
+            l_sum += l.data.item() * torch.numel(y.data)
+            n += torch.numel(y.data)
+            
+        if (epoch + 1) % pred_period == 0:
+            print('epoch %d, perplexity %f, time %.2f sec' % (
+                epoch + 1, math.exp(l_sum / n), time.time() - start))
+            for prefix in prefixes:
+                print(' -', predict_rnn(
+                    prefix, pred_len, rnn, params, init_rnn_state,
+                    num_hiddens, vocab_size, device, idx_to_char, char_to_idx))
 
 
-# def train_ch3(net, train_iter, test_iter, loss, num_epochs, batch_size,
-#               params=None, lr=None, trainer=None):
-#     """Train and evaluate a model with CPU."""
-#     for epoch in range(num_epochs):
-#         train_l_sum, train_acc_sum, n = 0.0, 0.0, 0
-#         for X, y in train_iter:
-#             with autograd.record():
-#                 y_hat = net(X)
-#                 l = loss(y_hat, y).sum()
-#             l.backward()
-#             if trainer is None:
-#                 sgd(params, lr, batch_size)
-#             else:
-#                 trainer.step(batch_size)
-#             y = y.astype('float32')
-#             train_l_sum += l.asscalar()
-#             train_acc_sum += (y_hat.argmax(axis=1) == y).sum().asscalar()
-#             n += y.size
-#         test_acc = evaluate_accuracy(test_iter, net)
-#         print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f'
-#               % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc))
+def train_and_predict_rnn_nn(model, num_hiddens, vocab_size, device,
+                            corpus_indices, idx_to_char, char_to_idx,
+                            num_epochs, num_steps, lr, clipping_theta,
+                            batch_size, pred_period, pred_len, prefixes):
+    """Train an Gluon RNN model and predict the next item in the sequence."""
+    loss = nn.CrossEntropyLoss()
+    model.to(device)
+    params_init(model, init=nn.init.normal_, mean=0.01)
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0, weight_decay=0)
+    
+    for epoch in range(num_epochs):
+        l_sum, n, start = 0.0, 0, time.time()
+        data_iter = data_iter_consecutive(
+            corpus_indices, batch_size, num_steps, device)
+        state = None
+        for X, Y in data_iter:
+            optimizer.zero_grad()
+            if not state is None:
+                state.detach_()
+            (output, state) = model(X, state)
+            y = Y.long().t().flatten()
+            l = loss(output, y)
+            l.backward()
+            # 梯度裁剪
+            nn.utils.clip_grad_norm_(model.parameters(), clipping_theta)
+            optimizer.step()
+            l_sum += l.data.mean().item() * torch.numel(y.data)
+            n += torch.numel(y.data)
+        
+        if (epoch + 1) % pred_period == 0:
+            print('epoch %d, perplexity %f, time %.2f sec' % (
+                epoch + 1, math.exp(l_sum / n), time.time() - start))
+            for prefix in prefixes:
+                print(' -', predict_rnn_nn(
+                    prefix, pred_len, model, vocab_size, device, idx_to_char,
+                    char_to_idx))
+
+
+def train_ch3(net, train_iter, test_iter, loss, num_epochs, batch_size,
+              params=None, lr=None, optimizer=None):
+    """Train and evaluate a model with CPU."""
+    for epoch in range(num_epochs):
+        train_l_sum, train_acc_sum, n = 0.0, 0.0, 0
+        for X, y in train_iter:
+            y_hat = net(X)
+            l = loss(y_hat, y).sum()
+            l.backward()
+            if optimizer is None:
+                if isinstance(loss, nn.Module):
+                    sgd(params, lr, 1)
+                else:
+                    sgd(params, lr, batch_size)
+            else:
+                optimizer.step()
+                optimizer.zero_grad()
+                
+            train_l_sum += l.data.item()
+            train_acc_sum += (y_hat.data.argmax(dim=1) == y).sum().item()
+            n += y.size(0)
+        
+        test_acc = evaluate_accuracy(test_iter, net)
+        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f'
+              % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc))
 
 
 def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs):
@@ -714,8 +718,8 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
             l.backward()
             optimizer.step()
             
-            train_l_sum += float(l)
-            train_acc_sum += float((torch.argmax(y_hat.data, dim=1) == y.data).sum())
+            train_l_sum += l.data.item()
+            train_acc_sum += (torch.argmax(y_hat.data, dim=1) == y.data).sum().item()
             n += y.size(0)
     
         test_acc = evaluate_accuracy(test_iter, net, device)
