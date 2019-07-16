@@ -1,7 +1,7 @@
 # d2l-torch
 
 > **首先感谢《动手学深度学习》的原作者及贡献者们为我们提供了一本极其优秀的教材。  
-> 原书地址：<http://zh.d2l.ai/>，原书视频教程：[B站：动手学深度学习](https://space.bilibili.com/209599371/channel/detail?cid=23541)**
+> 原书地址：<http://zh.d2l.ai/>，原书视频教程：[B站-动手学深度学习](https://space.bilibili.com/209599371/channel/detail?cid=23541)**
 
 
 本书在原书内容(2019年5月20日版本)上将所有代码改用 PyTorch 进行实现，并以*注的形式*对部分内容的进行了解释与扩展。因为 PyTorch 与 MXNet 在架构以及API设计上存在一些不同，所以对原书内容进行了部分删改。
