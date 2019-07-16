@@ -639,7 +639,7 @@ def train_and_predict_rnn_nn(model, num_hiddens, vocab_size, device,
                             corpus_indices, idx_to_char, char_to_idx,
                             num_epochs, num_steps, lr, clipping_theta,
                             batch_size, pred_period, pred_len, prefixes):
-    """Train an Gluon RNN model and predict the next item in the sequence."""
+    """Train an PyTorch RNN model and predict the next item in the sequence."""
     loss = nn.CrossEntropyLoss()
     model.to(device)
     params_init(model, init=nn.init.normal_, mean=0.01)
@@ -653,7 +653,11 @@ def train_and_predict_rnn_nn(model, num_hiddens, vocab_size, device,
         for X, Y in data_iter:
             optimizer.zero_grad()
             if not state is None:
-                state.detach_()
+                if isinstance(state, tuple):
+                    for s in state:
+                        s.detach_()
+                else:
+                    state.detach_()
             (output, state) = model(X, state)
             y = Y.long().t().flatten()
             l = loss(output, y)

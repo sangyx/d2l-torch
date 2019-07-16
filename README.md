@@ -1,22 +1,13 @@
 # d2l-torch
 
 > **首先感谢《动手学深度学习》的原作者及贡献者们为我们提供了一本极其优秀的教材。  
-> 原书地址：<http://zh.d2l.ai/>**
+> 原书地址：<http://zh.d2l.ai/>，原书视频教程：[B站：动手学深度学习](https://space.bilibili.com/209599371/channel/detail?cid=23541)**
 
 
-本仓库在原书内容上将所有代码改用 PyTorch 进行实现，并以注的形式对部分内容的进行了解释与扩展，如：  
-
-
-*注：关于什么是互相关运算和卷积运算，可以参见：[卷积（convolution）与互相关(cross-correlation)的一点探讨](https://zhuanlan.zhihu.com/p/33194385)*
+本书在原书内容(2019年5月20日版本)上将所有代码改用 PyTorch 进行实现，并以*注的形式*对部分内容的进行了解释与扩展。因为 PyTorch 与 MXNet 在架构以及API设计上存在一些不同，所以对原书内容进行了部分删改。
 
 
 请按照[toc.ipynb](toc.ipynb)中的目录顺序进行阅读学习。
 
 
-虽然 PyTorch 与 MXNet API 较为相似，但是在具体实现上仍然存在一些不同，所以对原书内容进行了部分删改。水平有限，如有纰漏，欢迎指正。
-
-
-推荐购买原书纸质版：
-
-
-[![img](https://camo.githubusercontent.com/14ec5ee9a194377172c6d8e326029e4d0db61edd/68747470733a2f2f696d6775722e636f6d2f646f776e6c6f61642f684c726a314974)](http://zh.d2l.ai/)
+水平有限，如有错漏，欢迎指正。
