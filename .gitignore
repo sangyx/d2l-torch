@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 debug.py
+sentiment/
+.vector_cache/
 
 # C extensions
 *.so

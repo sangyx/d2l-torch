@@ -12,6 +12,7 @@ from matplotlib import pyplot as plt
 
 import torch
 from torch import autograd, nn, optim
+import torchtext as text
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
@@ -114,13 +115,15 @@ def data_iter_random(corpus_indices, batch_size, num_steps, device='cpu'):
         yield X, Y
 
 
-def download_imdb(data_dir='../data'):
+def download_imdb(path='../data/sentiment/', fname='aclImdb_v1.tar.gz'):
     """Download the IMDB data set for sentiment analysis."""
-    url = ('http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz')
-    sha1 = '01ada507287d82875905620988597833ad4e0903'
-    fname = gutils.download(url, data_dir, sha1_hash=sha1)
-    with tarfile.open(fname, 'r') as f:
-        f.extractall(data_dir)
+    if not os.path.exists(path):
+        os.mkdir(path)
+    if not os.path.isfile(path + fname):
+        url = ('http://ai.stanford.edu/~amaas/data/sentiment/aclImdb_v1.tar.gz')
+        text.utils.download_from_url(url, path+fname)
+    with tarfile.open(path+fname, 'r') as f:
+        f.extractall(path)
 
 
 def _download_pikachu(data_dir):
@@ -183,18 +186,18 @@ def get_fashion_mnist_labels(labels):
     return [text_labels[int(i)] for i in labels]
 
 
-# def get_tokenized_imdb(data):
-#     """Get the tokenized IMDB data set for sentiment analysis."""
-#     def tokenizer(text):
-#         return [tok.lower() for tok in text.split(' ')]
-#     return [tokenizer(review) for review, _ in data]
+def get_tokenized_imdb(data):
+    """Get the tokenized IMDB data set for sentiment analysis."""
+    def tokenizer(text):
+        return [tok.lower() for tok in text.split(' ')]
+    return [tokenizer(review) for review, _ in data]
 
 
-# def get_vocab_imdb(data):
-#     """Get the vocab for the IMDB data set for sentiment analysis."""
-#     tokenized_data = get_tokenized_imdb(data)
-#     counter = collections.Counter([tk for st in tokenized_data for tk in st])
-#     return text.vocab.Vocabulary(counter, min_freq=5)
+def get_vocab_imdb(data):
+    """Get the vocab for the IMDB data set for sentiment analysis."""
+    tokenized_data = get_tokenized_imdb(data)
+    counter = collections.Counter([tk for st in tokenized_data for tk in st])
+    return text.vocab.Vocab(counter, min_freq=5)
 
 
 def grad_clipping(params, theta, device):
@@ -301,21 +304,13 @@ def one_hot(idx, size, device='cpu'):
 def params_init(model, init, **kwargs):
     """Initialize the parameters."""
     def initializer(m):
-        if isinstance(m, nn.Conv2d):
+        if isinstance(m, nn.Sequential) or isinstance(m, nn.ModuleList):
+            return
+        try:
             init(m.weight.data, **kwargs)
             m.bias.data.fill_(0)
-
-        elif isinstance(m, nn.Linear):
-            init(m.weight.data, **kwargs)
-            m.bias.data.fill_(0)
-
-        elif isinstance(m, nn.BatchNorm2d):
-            m.weight.data.fill_(1.0)
-            m.bias.data.fill_(0)
-
-        elif isinstance(m, nn.BatchNorm1d):
-            m.weight.data.fill_(1.0)
-            m.bias.data.fill_(0)
+        except AttributeError:
+            pass
 
     model.apply(initializer)
 
@@ -351,37 +346,41 @@ def predict_rnn_nn(prefix, num_chars, model, vocab_size, device, idx_to_char,
     return ''.join([idx_to_char[i] for i in output])
 
 
-# def predict_sentiment(net, vocab, sentence):
-#     """Predict the sentiment of a given sentence."""
-#     sentence = nd.array(vocab.to_indices(sentence), ctx=try_gpu())
-#     label = nd.argmax(net(sentence.reshape((1, -1))), axis=1)
-#     return 'positive' if label.asscalar() == 1 else 'negative'
+def predict_sentiment(net, vocab, sentence):
+    """Predict the sentiment of a given sentence."""
+    sentence = torch.tensor([vocab.stoi[w] for w in sentence], device=try_gpu())
+    with torch.no_grad():
+        label = torch.argmax(net(sentence.reshape(1, -1)), dim=1)
+    return 'positive' if label.item() == 1 else 'negative'
 
 
-# def preprocess_imdb(data, vocab):
-#     """Preprocess the IMDB data set for sentiment analysis."""
-#     max_l = 500
+def preprocess_imdb(data, vocab):
+    """Preprocess the IMDB data set for sentiment analysis."""
+    max_l = 500  # 将每条评论通过截断或者补0，使得长度变成500
 
-#     def pad(x):
-#         return x[:max_l] if len(x) > max_l else x + [0] * (max_l - len(x))
+    def pad(x):
+        return x[:max_l] if len(x) > max_l else x + [0] * (max_l - len(x))
 
-#     tokenized_data = get_tokenized_imdb(data)
-#     features = nd.array([pad(vocab.to_indices(x)) for x in tokenized_data])
-#     labels = nd.array([score for _, score in data])
-#     return features, labels
+    tokenized_data = get_tokenized_imdb(data)
+    indices = []
+    for review in tokenized_data:
+        indices.append(pad([vocab.stoi[w] for w in review]))
+    features = torch.tensor(indices)
+    labels = torch.tensor([score for _, score in data])
+    return features, labels
 
 
-# def read_imdb(folder='train'):
-#     """Read the IMDB data set for sentiment analysis."""
-#     data = []
-#     for label in ['pos', 'neg']:
-#         folder_name = os.path.join('../data/aclImdb/', folder, label)
-#         for file in os.listdir(folder_name):
-#             with open(os.path.join(folder_name, file), 'rb') as f:
-#                 review = f.read().decode('utf-8').replace('\n', '').lower()
-#                 data.append([review, 1 if label == 'pos' else 0])
-#     random.shuffle(data)
-#     return data
+def read_imdb(folder='train'):
+    """Read the IMDB data set for sentiment analysis."""
+    data = []
+    for label in ['pos', 'neg']:
+        folder_name = os.path.join('../data/sentiment/aclImdb/', folder, label)
+        for file in os.listdir(folder_name):
+            with open(os.path.join(folder_name, file), 'rb') as f:
+                review = f.read().decode('utf-8').replace('\n', '').lower()
+                data.append([review, 1 if label == 'pos' else 0])
+    random.shuffle(data)
+    return data
 
 
 # def read_voc_images(root='../data/VOCdevkit/VOC2012', is_train=True):
@@ -549,32 +548,37 @@ def to_onehot(X, size, device='cpu'):
     return [one_hot(x, size, device) for x in X.long().t()]
 
 
-# def train(train_iter, test_iter, net, loss, trainer, ctx, num_epochs):
-#     """Train and evaluate a model."""
-#     print('training on', ctx)
-#     if isinstance(ctx, mx.Context):
-#         ctx = [ctx]
-#     for epoch in range(num_epochs):
-#         train_l_sum, train_acc_sum, n, m, start = 0.0, 0.0, 0, 0, time.time()
-#         for i, batch in enumerate(train_iter):
-#             Xs, ys, batch_size = _get_batch(batch, ctx)
-#             ls = []
-#             with autograd.record():
-#                 y_hats = [net(X) for X in Xs]
-#                 ls = [loss(y_hat, y) for y_hat, y in zip(y_hats, ys)]
-#             for l in ls:
-#                 l.backward()
-#             trainer.step(batch_size)
-#             train_l_sum += sum([l.sum().asscalar() for l in ls])
-#             n += sum([l.size for l in ls])
-#             train_acc_sum += sum([(y_hat.argmax(axis=1) == y).sum().asscalar()
-#                                  for y_hat, y in zip(y_hats, ys)])
-#             m += sum([y.size for y in ys])
-#         test_acc = evaluate_accuracy(test_iter, net, ctx)
-#         print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
-#               'time %.1f sec'
-#               % (epoch + 1, train_l_sum / n, train_acc_sum / m, test_acc,
-#                  time.time() - start))
+def train(train_iter, test_iter, net, loss, optimizer, flag, device, num_epochs):
+    """Train and evaluate a model."""
+    if flag:
+        print('training on', 'multiple gpus')
+        nn.DataParallel(net)
+    else:
+        net = net.to(device)
+        print('training on', device)
+
+    for epoch in range(num_epochs):
+        train_l_sum, train_acc_sum, n, m, start = 0.0, 0.0, 0, 0, time.time()
+             
+        for X, y in train_iter:
+            X, y = X.to(device), y.to(device)
+            
+            optimizer.zero_grad()
+            output = net(X)
+            l = loss(output, y)
+            l.backward()
+            optimizer.step()
+            train_l_sum += l.sum().item()
+            n += torch.numel(l)
+            train_acc_sum += (output.data.argmax(dim=1) == y).sum().item()
+            m += torch.numel(y)
+        
+
+        test_acc = evaluate_accuracy(test_iter, net, device)
+        print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, '
+              'time %.1f sec'
+              % (epoch + 1, train_l_sum / n, train_acc_sum / m, test_acc,
+                 time.time() - start))
 
 
 # def train_2d(trainer):
@@ -793,24 +797,17 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
 #     plt.ylabel('loss')
 
 
-# def try_all_gpus():
-#     """Return all available GPUs, or [mx.cpu()] if there is no GPU."""
-#     ctxes = []
-#     try:
-#         for i in range(16):
-#             ctx = mx.gpu(i)
-#             _ = nd.array([0], ctx=ctx)
-#             ctxes.append(ctx)
-#     except mx.base.MXNetError:
-#         pass
-#     if not ctxes:
-#         ctxes = [mx.cpu()]
-#     return ctxes
+def try_all_gpus():
+    """Return flag, device."""
+    if torch.cuda.device_count() > 1:
+        return True, torch.device('cuda')
+    else:
+        return False, try_gpu()
 
 
 def try_gpu():
-    """If GPU is available, return mx.gpu(0); else return mx.cpu()."""
-    return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    """If GPU is available, return torch.device('cuda'); else return torch.device('cpu')."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def use_svg_display():
