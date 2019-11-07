@@ -8,7 +8,7 @@
    :maxdepth: 2
 
    install
-   ndarray
+   tensor
    autograd
    lookup-api
 
