@@ -14,6 +14,7 @@ import torch
 from torch import autograd, nn, optim
 import torchtext as text
 from torchvision import datasets, transforms
+import torch.utils.data as tdata
 from torch.utils.data import DataLoader
 
 import numpy as np
@@ -62,16 +63,16 @@ def corr2d(X, K):
     return Y
 
 
-# def count_tokens(samples):
-#     """Count tokens in the data set."""
-#     token_counter = collections.Counter()
-#     for sample in samples:
-#         for token in sample:
-#             if token not in token_counter:
-#                 token_counter[token] = 1
-#             else:
-#                 token_counter[token] += 1
-#     return token_counter
+def count_tokens(samples):
+    """Count tokens in the data set."""
+    token_counter = collections.Counter()
+    for sample in samples:
+        for token in sample:
+            if token not in token_counter:
+                token_counter[token] = 1
+            else:
+                token_counter[token] += 1
+    return token_counter
 
 
 def data_iter(batch_size, features, labels):
@@ -172,11 +173,11 @@ def evaluate_accuracy(data_iter, net, device='cpu'):
 #             gutils.split_and_load(labels, ctx), features.shape[0])
 
 
-# def get_data_ch7():
-#     """Get the data set used in Chapter 7."""
-#     data = np.genfromtxt('../data/airfoil_self_noise.dat', delimiter='\t')
-#     data = (data - data.mean(axis=0)) / data.std(axis=0)
-#     return nd.array(data[:, :-1]), nd.array(data[:, -1])
+def get_data_ch7():
+    """Get the data set used in Chapter 7."""
+    data = np.genfromtxt('../data/airfoil_self_noise.dat', delimiter='\t')
+    data = (data - data.mean(axis=0)) / data.std(axis=0)
+    return torch.tensor(data[:1500, :-1]).float(), torch.tensor(data[:1500, -1]).float()
 
 
 def get_fashion_mnist_labels(labels):
@@ -304,13 +305,21 @@ def one_hot(idx, size, device='cpu'):
 def params_init(model, init, **kwargs):
     """Initialize the parameters."""
     def initializer(m):
-        if isinstance(m, nn.Sequential) or isinstance(m, nn.ModuleList):
-            return
-        try:
+        if isinstance(m, nn.Conv2d):
             init(m.weight.data, **kwargs)
             m.bias.data.fill_(0)
-        except AttributeError:
-            pass
+
+        elif isinstance(m, nn.Linear):
+            init(m.weight.data, **kwargs)
+            m.bias.data.fill_(0)
+
+        elif isinstance(m, nn.BatchNorm2d):
+            m.weight.data.fill_(1.0)
+            m.bias.data.fill_(0)
+
+        elif isinstance(m, nn.BatchNorm1d):
+            m.weight.data.fill_(1.0)
+            m.bias.data.fill_(0)
 
     model.apply(initializer)
 
@@ -525,17 +534,17 @@ def show_fashion_mnist(images, labels):
 #     return axes
 
 
-# def show_trace_2d(f, res):
-#     """Show the trace of 2d variables during optimization."""
-#     x1, x2 = zip(*res)
-#     set_figsize()
-#     plt.plot(x1, x2, '-o', color='#ff7f0e')
-#     x1 = np.arange(-5.5, 1.0, 0.1)
-#     x2 = np.arange(min(-3.0, min(x2) - 1), max(1.0, max(x2) + 1), 0.1)
-#     x1, x2 = np.meshgrid(x1, x2)
-#     plt.contour(x1, x2, f(x1, x2), colors='#1f77b4')
-#     plt.xlabel('x1')
-#     plt.ylabel('x2')
+def show_trace_2d(f, res):
+    """Show the trace of 2d variables during optimization."""
+    x1, x2 = zip(*res)
+    set_figsize()
+    plt.plot(x1, x2, '-o', color='#ff7f0e')
+    x1 = np.arange(-5.5, 1.0, 0.1)
+    x2 = np.arange(min(-3.0, min(x2) - 1), max(1.0, max(x2) + 1), 0.1)
+    x1, x2 = np.meshgrid(x1, x2)
+    plt.contour(x1, x2, f(x1, x2), colors='#1f77b4')
+    plt.xlabel('x1')
+    plt.ylabel('x2')
 
 
 def squared_loss(y_hat, y):
@@ -581,16 +590,16 @@ def train(train_iter, test_iter, net, loss, optimizer, flag, device, num_epochs)
                  time.time() - start))
 
 
-# def train_2d(trainer):
-#     """Optimize the objective function of 2d variables with a customized trainer."""
-#     x1, x2 = -5, -2
-#     s_x1, s_x2 = 0, 0
-#     res = [(x1, x2)]
-#     for i in range(20):
-#         x1, x2, s_x1, s_x2 = trainer(x1, x2, s_x1, s_x2)
-#         res.append((x1, x2))
-#     print('epoch %d, x1 %f, x2 %f' % (i+1, x1, x2))
-#     return res
+def train_2d(trainer):
+    """Optimize the objective function of 2d variables with a customized trainer."""
+    x1, x2 = -5, -2
+    s_x1, s_x2 = 0, 0
+    res = [(x1, x2)]
+    for i in range(20):
+        x1, x2, s_x1, s_x2 = trainer(x1, x2, s_x1, s_x2)
+        res.append((x1, x2))
+    print('epoch %d, x1 %f, x2 %f' % (i+1, x1, x2))
+    return res
 
 
 def train_and_predict_rnn(rnn, get_params, init_rnn_state, num_hiddens,
@@ -735,66 +744,68 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
               % (epoch + 1, train_l_sum / n, train_acc_sum / n, test_acc, time.time() - start))
 
 
-# def train_ch7(trainer_fn, states, hyperparams, features, labels, batch_size=10,
-#               num_epochs=2):
-#     """Train a linear regression model."""
-#     net, loss = linreg, squared_loss
-#     w, b = nd.random.normal(scale=0.01, shape=(features.shape[1], 1)), nd.zeros(1)
-#     w.attach_grad()
-#     b.attach_grad()
+def train_ch7(trainer_fn, states, hyperparams, features, labels, batch_size=10,
+              num_epochs=2):
+    """Train a linear regression model."""
+    net, loss = linreg, squared_loss
+    w = torch.normal(mean=torch.zeros(features.shape[1], 1), std=0.01)
+    b = torch.zeros(1)
+    w.requires_grad_()
+    b.requires_grad_()
 
-#     def eval_loss():
-#         return loss(net(features, w, b), labels).mean().asscalar()
+    def eval_loss():
+        return loss(net(features, w, b), labels).mean().item()
 
-#     ls = [eval_loss()]
-#     data_iter = gdata.DataLoader(
-#         gdata.ArrayDataset(features, labels), batch_size, shuffle=True)
-#     for _ in range(num_epochs):
-#         start = time.time()
-#         for batch_i, (X, y) in enumerate(data_iter):
-#             with autograd.record():
-#                 l = loss(net(X, w, b), y).mean()
-#             l.backward()
-#             trainer_fn([w, b], states, hyperparams)
-#             if (batch_i + 1) * batch_size % 100 == 0:
-#                 ls.append(eval_loss())
-#     print('loss: %f, %f sec per epoch' % (ls[-1], time.time() - start))
-#     set_figsize()
-#     plt.plot(np.linspace(0, num_epochs, len(ls)), ls)
-#     plt.xlabel('epoch')
-#     plt.ylabel('loss')
+    ls = [eval_loss()]
+    data_iter = tdata.DataLoader(
+        tdata.TensorDataset(features, labels), batch_size, shuffle=True)
+    for _ in range(num_epochs):
+        start = time.time()
+        for batch_i, (X, y) in enumerate(data_iter):
+            l = loss(net(X, w, b), y).mean()
+            l.backward()
+            trainer_fn([w, b], states, hyperparams)
+            if (batch_i + 1) * batch_size % 100 == 0:
+                ls.append(eval_loss())
+    print('loss: %f, %f sec per epoch' % (ls[-1], time.time() - start))
+    set_figsize()
+    plt.plot(np.linspace(0, num_epochs, len(ls)), ls)
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
 
 
-# def train_gluon_ch7(trainer_name, trainer_hyperparams, features, labels,
-#                     batch_size=10, num_epochs=2):
-#     """Train a linear regression model with a given Gluon trainer."""
-#     net = nn.Sequential()
-#     net.add(nn.Dense(1))
-#     net.initialize(init.Normal(sigma=0.01))
-#     loss = gloss.L2Loss()
+def train_nn_ch7(trainer, trainer_hyperparams, features, labels,
+                    batch_size=10, num_epochs=2):
+    """Train a linear regression model with a given Gluon trainer."""
+    net = nn.Sequential(nn.Linear(features.shape[-1], 1))
+    params_init(net, nn.init.normal_, std=0.01)
+    loss = nn.MSELoss()
 
-#     def eval_loss():
-#         return loss(net(features), labels).mean().asscalar()
+    def eval_loss():
+        with torch.no_grad():
+            return loss(net(features), labels.view(-1, 1)).item() / 2
 
-#     ls = [eval_loss()]
-#     data_iter = gdata.DataLoader(
-#         gdata.ArrayDataset(features, labels), batch_size, shuffle=True)
-#     trainer = gluon.Trainer(net.collect_params(),
-#                             trainer_name, trainer_hyperparams)
-#     for _ in range(num_epochs):
-#         start = time.time()
-#         for batch_i, (X, y) in enumerate(data_iter):
-#             with autograd.record():
-#                 l = loss(net(X), y)
-#             l.backward()
-#             trainer.step(batch_size)
-#             if (batch_i + 1) * batch_size % 100 == 0:
-#                 ls.append(eval_loss())
-#     print('loss: %f, %f sec per epoch' % (ls[-1], time.time() - start))
-#     set_figsize()
-#     plt.plot(np.linspace(0, num_epochs, len(ls)), ls)
-#     plt.xlabel('epoch')
-#     plt.ylabel('loss')
+    ls = [eval_loss()]
+    data_iter = tdata.DataLoader(
+        tdata.TensorDataset(features, labels), batch_size, shuffle=True)
+    # 创建Optimizer实例来迭代模型参数
+    optimizer = trainer(
+        net.parameters(), **trainer_hyperparams)
+    for _ in range(num_epochs):
+        start = time.time()
+        for batch_i, (X, y) in enumerate(data_iter):
+            optimizer.zero_grad()
+            l = loss(net(X), y.view(-1, 1)) / 2
+            l.backward()
+            optimizer.step()  # 在Optimizer实例里做梯度平均
+            if (batch_i + 1) * batch_size % 100 == 0:
+                ls.append(eval_loss())
+    # 打印结果和作图
+    print('loss: %f, %f sec per epoch' % (ls[-1], time.time() - start))
+    set_figsize()
+    plt.plot(np.linspace(0, num_epochs, len(ls)), ls)
+    plt.xlabel('epoch')
+    plt.ylabel('loss')
 
 
 def try_all_gpus():
