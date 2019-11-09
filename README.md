@@ -7,7 +7,7 @@
 
 **请按照目录[toc.ipynb](https://nbviewer.jupyter.org/github/sangyx/d2l-torch/blob/master/toc.ipynb)中的顺序阅读学习。**
 
-TODO：
+TODO(见todo目录)：
 
 - [ ] 第8章计算性能、第9章计算机视觉
 - [ ] Berkeley-Stat-157 homework与solution整理
