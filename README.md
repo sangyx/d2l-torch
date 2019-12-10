@@ -9,9 +9,10 @@
 
 TODO(见todo目录)：
 
-- [ ] 第8章计算性能、第9章计算机视觉
-- [ ] Berkeley-Stat-157 homework与solution整理
-- [ ] 对英文版d2l部分章节的翻译、改写(英文版d2l的内容相较中文版多了[Recommender Systems](https://d2l.ai/chapter_recommender-systems/index.html#recommender-systems)、[Generative Adversarial Networks](https://d2l.ai/chapter_generative_adversarial_networks/index.html#generative-adversarial-networks)及部分零散小节)
+- [ ] 第8章计算性能
+- [ ] 第9章计算机视觉
+<!-- - [ ] Berkeley-Stat-157 homework与solution整理 -->
+<!-- - [ ] 对英文版d2l部分章节的翻译、改写(英文版d2l的内容相较中文版多了[Recommender Systems](https://d2l.ai/chapter_recommender-systems/index.html#recommender-systems)、[Generative Adversarial Networks](https://d2l.ai/chapter_generative_adversarial_networks/index.html#generative-adversarial-networks)及部分零散小节) -->
 
 如果你喜欢这本书，请给本项目点个star，并购买原书纸质版支持原作者及贡献者。
 
