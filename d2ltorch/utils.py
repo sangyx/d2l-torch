@@ -307,19 +307,23 @@ def params_init(model, init, **kwargs):
     def initializer(m):
         if isinstance(m, nn.Conv2d):
             init(m.weight.data, **kwargs)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
         elif isinstance(m, nn.Linear):
             init(m.weight.data, **kwargs)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
         elif isinstance(m, nn.BatchNorm2d):
             m.weight.data.fill_(1.0)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
         elif isinstance(m, nn.BatchNorm1d):
             m.weight.data.fill_(1.0)
-            m.bias.data.fill_(0)
+            if m.bias is not None:
+                m.bias.data.fill_(0)
 
     model.apply(initializer)
 
