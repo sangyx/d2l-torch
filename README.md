@@ -7,11 +7,6 @@
 
 **请按照目录[toc.ipynb](https://nbviewer.jupyter.org/github/sangyx/d2l-torch/blob/master/toc.ipynb)中的顺序阅读学习。**
 
-TODO(见todo目录)：
-
-- [ ] 第8章计算性能
-- [ ] 第9章计算机视觉
-
 如果你喜欢这本书，请给本项目点个star，并购买原书纸质版支持原作者及贡献者。
 
-水平有限，如有错漏，欢迎在issue中指正。
+项目未来短期内不再更新，如需要计算性能、计算机视觉两章可使用项目[Dive-into-DL-PyTorch](https://github.com/ShusenTang/Dive-into-DL-PyTorch)。如有疑问欢迎使用issue。
